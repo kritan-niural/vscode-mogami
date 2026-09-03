@@ -1,7 +1,7 @@
 {
   "name": "vscode-mogami",
   "displayName": "Mogami",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A VS Code extension for checking the latest version of each dependency",
   "categories": [
     "Other",
