@@ -84,6 +84,8 @@ For Python projects (`pyproject.toml`, `Pipfile`, `requirements.txt`, PEP 723), 
 
 Whenever the *active* source (from either the manifest or the setting above) is a CodeArtifact endpoint, Mogami automatically attaches authentication — no extra configuration needed. This requires the [AWS CLI](https://aws.amazon.com/cli/) to be installed and already authenticated locally (whatever profile/SSO/env-var setup already works in your terminal). Mogami shells out to `aws codeartifact get-authorization-token` to mint a short-lived token and transparently refreshes it before it expires (tokens are valid for up to 12 hours) — no manual re-entry needed, unlike the GitHub Personal Access Token below.
 
+If your manifest's source URL embeds credentials for other tools to use, e.g. `https://aws:${CODEARTIFACT_AUTH_TOKEN}@.../simple/` (a common pattern for `pip`/Pipenv, where the tool resolves `${CODEARTIFACT_AUTH_TOKEN}` from an environment variable at install time), that's fine to leave as-is — Mogami ignores/strips any embedded username or password from the URL and authenticates independently via the AWS CLI flow above. This also avoids a hard failure: browsers and Node's `fetch()` refuse to make a request to any URL that embeds credentials at all, whether real or an unresolved `${VAR}` placeholder.
+
 #### Routing only some packages to the private source
 
 If your CodeArtifact repository only hosts internal packages (and shouldn't be queried for standard public packages, or vice versa), restrict it to package names matching a pattern via `vscode-mogami.privateSourcePackagePattern` (comma-separated substrings, case-insensitive), e.g.:

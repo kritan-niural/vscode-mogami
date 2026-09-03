@@ -4,14 +4,16 @@ import { PackageType } from '@/schemas'
 import { AbstractPackageClient } from './abstractClient'
 import { clearCache } from './cache'
 
+const getUsePrivateSourceMock = vi.fn<() => boolean>(() => false)
+
 vi.mock('@/configuration', () => ({
   getShowPrerelease: () => false,
-  getUsePrivateSource: () => false,
+  getUsePrivateSource: () => getUsePrivateSourceMock(),
 }))
 
 class TestClient extends AbstractPackageClient {
-  constructor() {
-    super('https://example.com/')
+  constructor(privateSource?: string) {
+    super('https://example.com/', privateSource)
   }
 
   async get(_name: string): Promise<PackageType> {
@@ -24,6 +26,10 @@ class TestClient extends AbstractPackageClient {
 
   fetchTextPublic(url: string, options?: { headers?: Record<string, string> }) {
     return this.fetchText(url, options)
+  }
+
+  get sourcePublic(): URL {
+    return this.source
   }
 }
 
@@ -49,6 +55,7 @@ describe('AbstractPackageClient', () => {
     client = new TestClient()
     clearCache()
     vi.unstubAllGlobals()
+    getUsePrivateSourceMock.mockReturnValue(false)
   })
 
   describe('fetchJson', () => {
@@ -94,6 +101,27 @@ describe('AbstractPackageClient', () => {
       })
       const [, init] = vi.mocked(fetch).mock.calls[0]
       expect((init!.headers as Headers).get('authorization')).toBe('Basic token')
+    })
+  })
+
+  describe('credential stripping', () => {
+    // fetch() throws on any URL with embedded userinfo — real credentials or an
+    // unresolved "${VAR}" template some manifests use for tools that read it from
+    // an env var. Since we never read URL userinfo for auth, always strip it.
+    it('strips real embedded credentials from a private source', () => {
+      getUsePrivateSourceMock.mockReturnValue(true)
+      const withCreds = new TestClient('https://user:pass@private.example.com/simple/')
+      expect(withCreds.sourcePublic.toString()).toBe('https://private.example.com/simple/')
+    })
+
+    it('strips an unresolved env-var template from a private source', () => {
+      getUsePrivateSourceMock.mockReturnValue(true)
+      const withTemplate = new TestClient(
+        'https://aws:${CODEARTIFACT_AUTH_TOKEN}@my-domain-123456789012.d.codeartifact.us-east-1.amazonaws.com/pypi/my-repo/simple/',
+      )
+      expect(withTemplate.sourcePublic.toString()).toBe(
+        'https://my-domain-123456789012.d.codeartifact.us-east-1.amazonaws.com/pypi/my-repo/simple/',
+      )
     })
   })
 })

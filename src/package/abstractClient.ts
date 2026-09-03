@@ -9,6 +9,16 @@ export { HttpError, isHttpError } from '@/httpError'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
+// fetch() throws on any URL that embeds credentials (real or an unresolved template
+// like "${TOKEN}", which some manifests use for tools that read it from an env var).
+// We never read URL userinfo for auth (CodeArtifact auth is a separately-built header),
+// so it's always safe to strip it here rather than let it break every request.
+function stripCredentials(url: URL): URL {
+  url.username = ''
+  url.password = ''
+  return url
+}
+
 export abstract class AbstractPackageClient implements PackageClientType {
   private usePrivateSource: boolean
   protected showPrerelease: boolean
@@ -16,9 +26,9 @@ export abstract class AbstractPackageClient implements PackageClientType {
   private privateSource?: URL
 
   constructor(primarySource: string, privateSource?: string) {
-    this.primarySource = new URL(primarySource)
+    this.primarySource = stripCredentials(new URL(primarySource))
     if (privateSource) {
-      this.privateSource = new URL(privateSource)
+      this.privateSource = stripCredentials(new URL(privateSource))
     }
 
     this.usePrivateSource = getUsePrivateSource()
