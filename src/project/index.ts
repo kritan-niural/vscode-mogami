@@ -36,6 +36,7 @@ import * as gemspec from './gemspec'
 import * as npm from './npm'
 import * as preCommit from './preCommit'
 import * as pep723 from './python/pep723'
+import * as pipfile from './python/pipfile'
 import * as pyproject from './python/pyproject'
 import * as requirements from './python/requirements'
 import * as shards from './shards'
@@ -60,6 +61,7 @@ const versioningConfig: Record<
     validateRange: pypiValidateRange,
   },
   pep723: { satisfies: pypiSatisfies, validateRange: pypiValidateRange },
+  pipfile: { satisfies: pypiSatisfies, validateRange: pypiValidateRange },
   shards: { satisfies: pypiSatisfies, validateRange: pypiValidateRange },
 }
 
@@ -69,6 +71,7 @@ const parsers: Record<ProjectFormatType, (doc: vscode.TextDocument) => ProjectTy
   'pip-requirements': requirements.parseProject,
   pyproject: pyproject.parseProject,
   pep723: pep723.parseProject,
+  pipfile: pipfile.parseProject,
   'pre-commit-config': preCommit.parseProject,
   gemfile: gemfile.parseProject,
   gemspec: gemspec.parseProject,
@@ -96,7 +99,8 @@ async function createClient(
   if (
     project.format === 'pyproject' ||
     project.format === 'pip-requirements' ||
-    project.format === 'pep723'
+    project.format === 'pep723' ||
+    project.format === 'pipfile'
   ) {
     const source = project.source ?? getCodeArtifactConfig()?.repositoryEndpoint
     return new PyPIClient(source)

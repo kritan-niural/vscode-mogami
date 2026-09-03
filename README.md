@@ -2,11 +2,38 @@
 
 A VS Code extension for checking the latest version of each dependency.
 
-[![Version](https://vsmarketplacebadges.dev/version-short/ninoseki.vscode-mogami.img)](https://marketplace.visualstudio.com/items?itemName=ninoseki.vscode-mogami)
-[![Installs](https://vsmarketplacebadges.dev/installs-short/ninoseki.vscode-mogami.img)](https://marketplace.visualstudio.com/items?itemName=ninoseki.vscode-mogami)
-[![Rating](https://vsmarketplacebadges.dev/rating-short/ninoseki.vscode-mogami.img)](https://marketplace.visualstudio.com/items?itemName=ninoseki.vscode-mogami)
+> **This is an internal fork** of [ninoseki/vscode-mogami](https://github.com/ninoseki/vscode-mogami), maintained for Niural developers. It adds AWS CodeArtifact integration and Pipfile support on top of the upstream project. It is **not** published to the VS Code Marketplace — install it from a `.vsix` file instead (see [Installation](#installation) below).
 
 ![img](https://raw.githubusercontent.com/ninoseki/vscode-mogami/main/screenshots/1.png)
+
+## Installation
+
+This extension isn't on the Marketplace, so it's installed from a `.vsix` file attached to a [GitHub Release](https://github.com/kritan-niural/vscode-mogami/releases) of this repo:
+
+1. Go to the [Releases page](https://github.com/kritan-niural/vscode-mogami/releases) and download the `.vsix` file from the latest release (e.g. `vscode-mogami-0.0.1.vsix`).
+2. Install it in VS Code, either:
+   - **From the UI**: open the Extensions view (`Cmd+Shift+X` / `Ctrl+Shift+X`) → click the `...` menu in the top-right → **Install from VSIX...** → select the downloaded file.
+   - **From the command line**: `code --install-extension /path/to/vscode-mogami-0.0.1.vsix`
+3. Reload VS Code if prompted.
+
+To get a new version later, repeat the same steps with the newer release's `.vsix` — it replaces the previously installed version.
+
+## Usage
+
+Once installed, Mogami works automatically — just open any [supported file](#supported-formats) (e.g. `pyproject.toml`, `Pipfile`, `requirements.txt`, `package.json`, `Gemfile`). For each dependency it shows:
+
+- The latest available version above the line (CodeLens), with a one-click action to update/bump to it when a newer version satisfies (or doesn't satisfy) your current specifier.
+- The same info, plus a short description when available, on hover.
+
+For Python projects specifically, this fork ships pre-configured to route Niural-internal (`niural-core`) packages through Niural's AWS CodeArtifact repository and everything else through the public PyPI index — see [AWS CodeArtifact](#aws-codeartifact). The only thing you need locally is the [AWS CLI](https://aws.amazon.com/cli/) installed and authenticated (e.g. `aws sso login`); no per-project configuration is required to get this working.
+
+### Commands
+
+Available via the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`, search "Mogami"):
+
+- **Clear cache** — clears cached package data, along with the CodeArtifact auth token and description caches. Useful right after changing settings, or if data looks stale.
+- **Set/Delete GitHub Personal Access Token** — see [Notes](#notes).
+- **Show/Hide CodeLens** — also available as a toggle icon in the editor tab toolbar while a supported file is open.
 
 ## Supported Formats
 
@@ -19,6 +46,7 @@ A VS Code extension for checking the latest version of each dependency.
     - [uv](https://docs.astral.sh/uv/): `tool.uv.build-constraint-dependencies`, `tool.uv.constraint-dependencies`, `tool.uv.dev-dependencies` & `tool.uv.override-dependencies`
     - PEP 518: `build-system.requires`
   - [PEP 723](https://peps.python.org/pep-0723/)
+  - [Pipfile](https://pipenv.pypa.io/en/latest/pipfile.html) (Pipenv): `[packages]` & `[dev-packages]`, `[[source]]`
 - Ruby:
   - `Gemfile`
   - `*.gemspec`
@@ -43,12 +71,13 @@ By default, this extension uses a public source (repository) to check package da
   - `pyproject.toml`:
     - [Poetry](https://python-poetry.org/): `tool.poetry.source`
     - [uv](https://docs.astral.sh/uv/): `tool.uv.index-url` and `tool.uv.index` (`explicit` is not supported/ignored)
+  - `Pipfile`: `[[source]].url`
 - Ruby:
   - `Gemfile`: `source`
 
 ### AWS CodeArtifact
 
-For Python projects (`pyproject.toml`, `requirements.txt`, PEP 723), Mogami can authenticate against a private [AWS CodeArtifact](https://aws.amazon.com/codeartifact/) PyPI repository — whether that endpoint is declared directly in the manifest (`tool.uv.index-url`, `tool.poetry.source`, `--index-url`) or supplied via a global setting for projects that don't declare their own source:
+For Python projects (`pyproject.toml`, `Pipfile`, `requirements.txt`, PEP 723), Mogami can authenticate against a private [AWS CodeArtifact](https://aws.amazon.com/codeartifact/) PyPI repository — whether that endpoint is declared directly in the manifest (`tool.uv.index-url`, `tool.poetry.source`, `--index-url`, `Pipfile`'s `[[source]].url`) or supplied via a global setting for projects that don't declare their own source:
 
 - `vscode-mogami.codeArtifact.repositoryEndpoint`: the repository's PyPI "simple" endpoint, used as a fallback source when a project has no manifest-declared source, e.g. `https://my-domain-123456789012.d.codeartifact.us-east-1.amazonaws.com/pypi/my-repo/simple/`. Obtain it with `aws codeartifact get-repository-endpoint --domain <domain> --repository <repository> --format pypi`.
 - `vscode-mogami.codeArtifact.profile` (optional): an AWS CLI named profile to authenticate as.
@@ -90,6 +119,20 @@ A `github` attributed dependency is supported. `gitlab`, `bitbucket`, etc. are n
 
 As with Crystal Shards, only GitHub repositories are supported.
 
+### CodeArtifact
+
+- Mogami doesn't perform AWS authentication itself — it shells out to the `aws` CLI, so it's only as available/fresh as your local AWS session (profile, SSO, env vars). If that session is invalid, CodeArtifact-sourced packages will show an error instead of a version.
+- Only one CodeArtifact repository endpoint is configurable at a time (`vscode-mogami.codeArtifact.repositoryEndpoint`); there's no per-workspace override beyond what a project's own manifest already declares.
+- `vscode-mogami.privateSourcePackagePattern` matches via a simple case-insensitive substring, not a glob or regex — e.g. `"core"` would also match an unrelated package named `example-core-thing`.
+- Fetching a description for a CodeArtifact-resolved package requires the `codeartifact:DescribePackageVersion` IAM permission. Without it, the package still resolves normally, just without a description (see [Package descriptions](#package-descriptions)).
+- Per-package index overrides (e.g. uv's `index = "..."`) and multiple named `[[source]]` entries (Pipfile) aren't respected — only the first source found in a manifest is used.
+
+### Pipfile
+
+- Only the `version` key of an inline-table dependency is read (e.g. `django = {version = "==3.2", extras = [...]}`) — `extras`, `markers`, and `index` are ignored.
+- Git/path/file/VCS dependencies (which have no `version` key) aren't resolved at all, since there's no registry version to compare against.
+- Only the first `[[source]]` entry in the file is used as the custom source.
+
 ## Configuration
 
 | Key                              | Default   | Desc.                                                                           |
@@ -109,7 +152,7 @@ As with Crystal Shards, only GitHub repositories are supported.
 Use them to avoid conflicts when another extension already provides the same feature for a file.
 For example, set `"vscode-mogami.disableHover": ["npm"]` to stop hovers on `package.json` from competing with the built-in `vscode.npm` extension.
 
-Valid format names: `docker-compose`, `dockerfile`, `gemfile`, `gemspec`, `github-actions-workflow`, `npm`, `pep723` , `pre-commit-config`, `pip-requirements`, `pyproject`, `shards`.
+Valid format names: `docker-compose`, `dockerfile`, `gemfile`, `gemspec`, `github-actions-workflow`, `npm`, `pep723`, `pipfile`, `pre-commit-config`, `pip-requirements`, `pyproject`, `shards`.
 
 ## Notes
 

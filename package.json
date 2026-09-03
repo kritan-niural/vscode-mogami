@@ -166,6 +166,7 @@
               "github-actions-workflow",
               "npm",
               "pep723",
+              "pipfile",
               "pre-commit-config",
               "pip-requirements",
               "pyproject",
@@ -188,6 +189,7 @@
               "github-actions-workflow",
               "npm",
               "pep723",
+              "pipfile",
               "pre-commit-config",
               "pip-requirements",
               "pyproject",
@@ -212,7 +214,7 @@
             "null",
             "string"
           ],
-          "default": null,
+          "default": "niural-core",
           "description": "Restrict the private/CodeArtifact Python package source to package names containing this substring (comma-separated for multiple, e.g. \"niural-core,acme-internal\"). Packages that don't match are resolved against the public PyPI index instead. Leave unset to use the private source for every package (default behavior)."
         },
         "vscode-mogami.showPrerelease": {
@@ -233,7 +235,7 @@
             "null",
             "string"
           ],
-          "default": null,
+          "default": "https://niural-366943963648.d.codeartifact.us-east-1.amazonaws.com/pypi/niural_virtual_repo/simple/",
           "description": "AWS CodeArtifact PyPI repository endpoint (e.g. https://my-domain-123456789012.d.codeartifact.us-east-1.amazonaws.com/pypi/my-repo/simple/), obtainable via `aws codeartifact get-repository-endpoint --domain <domain> --repository <repository> --format pypi`. Used as the package source for Python projects (pyproject.toml/uv/poetry, requirements.txt, PEP 723) that don't declare their own source. Requests are authenticated with a short-lived token minted via the AWS CLI (`aws codeartifact get-authorization-token`), auto-refreshed as needed; requires the AWS CLI to be installed and already authenticated locally."
         },
         "vscode-mogami.codeArtifact.profile": {
@@ -262,6 +264,7 @@
     "workspaceContains:**/docker-compose.*.{yaml,yml}",
     "workspaceContains:**/docker-compose.{yaml,yml}",
     "workspaceContains:**/package.json",
+    "workspaceContains:**/Pipfile",
     "workspaceContains:**/pyproject.toml",
     "workspaceContains:**/shard.yml",
     "workspaceContains:**/{requirements.txt,requirements-*.txt,*-requirements.txt,*.requirements.txt,constraints.txt}"
