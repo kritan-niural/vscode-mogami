@@ -141,7 +141,7 @@ export class PyPIClient extends AbstractPackageClient {
 
     try {
       const result = parse(JSON.parse(text))
-      return this.normalizePackage(result)
+      return { ...this.normalizePackage(result), source: source.toString() }
     } catch (err) {
       if (!(err instanceof ZodError) && !(err instanceof SyntaxError)) {
         throw err
@@ -156,6 +156,7 @@ export class PyPIClient extends AbstractPackageClient {
     }
 
     const normalized = this.normalizePackage(result)
+    normalized.source = source.toString()
 
     // The simple index has no description; best-effort enrich it from CodeArtifact's
     // own API when the resolved source is a CodeArtifact endpoint (no-op otherwise).

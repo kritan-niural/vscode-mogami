@@ -142,30 +142,44 @@ export async function getCodeArtifactAuthHeader(
 const DescribePackageVersionResponseSchema = z.object({
   packageVersion: z.object({
     summary: z.string().nullish(),
+    publishedTime: z.union([z.string(), z.number()]).nullish(),
   }),
 })
 
-// Descriptions rarely change, so a much longer TTL than the response-body cache is fine.
-const SUMMARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-
-const summaryCache = new TTLCache<string, string | undefined>({
-  max: 4096,
-  ttl: SUMMARY_CACHE_TTL_MS,
-})
-const inFlightSummaryRequests = new Map<string, Promise<string | undefined>>()
-
-export function clearCodeArtifactSummaryCache(): void {
-  summaryCache.clear()
-  inFlightSummaryRequests.clear()
+interface PackageVersionInfo {
+  summary?: string
+  publishedAt?: string
 }
 
-async function fetchPackageSummary(
+// Descriptions/publish dates rarely change, so a much longer TTL than the response-body cache is fine.
+const VERSION_INFO_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
+const versionInfoCache = new TTLCache<string, PackageVersionInfo>({
+  max: 4096,
+  ttl: VERSION_INFO_CACHE_TTL_MS,
+})
+const inFlightVersionInfoRequests = new Map<string, Promise<PackageVersionInfo>>()
+
+export function clearCodeArtifactSummaryCache(): void {
+  versionInfoCache.clear()
+  inFlightVersionInfoRequests.clear()
+}
+
+function formatPublishedTime(value: string | number | null | undefined): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10)
+}
+
+async function fetchPackageVersionInfo(
   identity: CodeArtifactIdentity,
   repository: string,
   packageName: string,
   packageVersion: string,
   profile?: string,
-): Promise<string | undefined> {
+): Promise<PackageVersionInfo> {
   const args = [
     'codeartifact',
     'describe-package-version',
@@ -196,13 +210,57 @@ async function fetchPackageSummary(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     Logger.debug(
-      `Failed to describe AWS CodeArtifact package version ${packageName}@${packageVersion}, continuing without a description. Underlying error: ${message}`,
+      `Failed to describe AWS CodeArtifact package version ${packageName}@${packageVersion}, continuing without a description/publish date. Underlying error: ${message}`,
     )
-    return undefined
+    return {}
   }
 
   const parsed = DescribePackageVersionResponseSchema.safeParse(JSON.parse(stdout))
-  return parsed.success ? (parsed.data.packageVersion.summary ?? undefined) : undefined
+  if (!parsed.success) {
+    return {}
+  }
+
+  return {
+    summary: parsed.data.packageVersion.summary ?? undefined,
+    publishedAt: formatPublishedTime(parsed.data.packageVersion.publishedTime),
+  }
+}
+
+async function getCodeArtifactPackageVersionInfo(params: {
+  repositoryEndpoint: string
+  profile?: string
+  packageName: string
+  packageVersion: string
+}): Promise<PackageVersionInfo> {
+  const identity = parseIdentity(params.repositoryEndpoint)
+  const repository = parseRepositoryName(params.repositoryEndpoint)
+  if (!identity || !repository) {
+    return {}
+  }
+
+  const cacheKey = `${identity.domain}/${repository}/${params.packageName}/${params.packageVersion}`
+  const cached = versionInfoCache.get(cacheKey)
+  if (cached) {
+    return cached
+  }
+
+  let inFlight = inFlightVersionInfoRequests.get(cacheKey)
+  if (!inFlight) {
+    inFlight = fetchPackageVersionInfo(
+      identity,
+      repository,
+      params.packageName,
+      params.packageVersion,
+      params.profile,
+    ).finally(() => {
+      inFlightVersionInfoRequests.delete(cacheKey)
+    })
+    inFlightVersionInfoRequests.set(cacheKey, inFlight)
+  }
+
+  const info = await inFlight
+  versionInfoCache.set(cacheKey, info)
+  return info
 }
 
 // AWS CodeArtifact's PyPI "simple" index (unlike pypi.org's JSON API) carries no
@@ -214,32 +272,18 @@ export async function getCodeArtifactPackageSummary(params: {
   packageName: string
   packageVersion: string
 }): Promise<string | undefined> {
-  const identity = parseIdentity(params.repositoryEndpoint)
-  const repository = parseRepositoryName(params.repositoryEndpoint)
-  if (!identity || !repository) {
-    return undefined
-  }
+  const info = await getCodeArtifactPackageVersionInfo(params)
+  return info.summary
+}
 
-  const cacheKey = `${identity.domain}/${repository}/${params.packageName}/${params.packageVersion}`
-  if (summaryCache.has(cacheKey)) {
-    return summaryCache.get(cacheKey)
-  }
-
-  let inFlight = inFlightSummaryRequests.get(cacheKey)
-  if (!inFlight) {
-    inFlight = fetchPackageSummary(
-      identity,
-      repository,
-      params.packageName,
-      params.packageVersion,
-      params.profile,
-    ).finally(() => {
-      inFlightSummaryRequests.delete(cacheKey)
-    })
-    inFlightSummaryRequests.set(cacheKey, inFlight)
-  }
-
-  const summary = await inFlight
-  summaryCache.set(cacheKey, summary)
-  return summary
+// Same underlying API call/cache as getCodeArtifactPackageSummary (reused when the same
+// package/version is looked up for both), just extracting the publish date instead.
+export async function getCodeArtifactPackageVersionDate(params: {
+  repositoryEndpoint: string
+  profile?: string
+  packageName: string
+  packageVersion: string
+}): Promise<string | undefined> {
+  const info = await getCodeArtifactPackageVersionInfo(params)
+  return info.publishedAt
 }

@@ -98,6 +98,8 @@ If your CodeArtifact repository only hosts internal packages (and shouldn't be q
 
 With this set, only package names containing `niural-core` are resolved against the private/CodeArtifact source; every other package (e.g. `requests`, `numpy`) is resolved against the public PyPI index instead, regardless of the configured source. Leave this setting unset to use the private source for every package (the default).
 
+This same pattern also changes what hover shows: for a matching package (e.g. `niural-core-utils`), hovering shows the **top 5 available versions** instead of just the latest one; every other package still shows a single "Latest version: X" line. For versions resolved from a CodeArtifact endpoint, each line also shows its publish date (`{version} - {publish_date}`, e.g. `2.0.0 - 2024-01-15`) via one additional `aws codeartifact describe-package-version` call per shown version — cached for 24h, and best-effort (falls back to just the version number if the date can't be fetched).
+
 #### Package descriptions
 
 AWS CodeArtifact's PyPI endpoint mirrors the standard [PEP 503](https://peps.python.org/pep-0503/) "simple" index format — a bare list of release filenames, with no description field. To still show a short description for CodeArtifact-resolved packages, Mogami automatically makes one additional `aws codeartifact describe-package-version` call per package (cached for 24h) to fetch it. If your AWS role doesn't have `codeartifact:DescribePackageVersion`, this fails silently and the package still resolves normally — just without a description.

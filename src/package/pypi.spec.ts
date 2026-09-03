@@ -171,6 +171,29 @@ describe('PyPIClient', () => {
     await expect(client.get('requests')).rejects.toThrow(/Failed to parse PyPI API response/)
   })
 
+  it('stamps the resolved source on the returned package (JSON API path)', async () => {
+    mockFetchText(JSON.stringify(jsonPayload))
+    const client = new PyPIClient()
+    const pkg = await client.get('requests')
+
+    expect(pkg.source).toBe('https://pypi.org/pypi/')
+  })
+
+  it('stamps the resolved source on the returned package (simple index path)', async () => {
+    getUsePrivateSourceMock.mockReturnValue(true)
+    const html = `
+      <html><body>
+        <a href="#">requests-2.31.0.tar.gz</a>
+        <a href="#">requests-2.32.0.tar.gz</a>
+      </body></html>
+    `
+    mockFetchText(html)
+    const client = new PyPIClient('https://private.example.com/pypi/simple/')
+    const pkg = await client.get('requests')
+
+    expect(pkg.source).toBe('https://private.example.com/pypi/simple/')
+  })
+
   it('attaches the auth header when using a private source', async () => {
     getUsePrivateSourceMock.mockReturnValue(true)
     getCodeArtifactAuthHeaderMock.mockResolvedValue({ authorization: 'Basic secret' })

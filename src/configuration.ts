@@ -77,3 +77,17 @@ export function getPrivateSourcePackagePatterns(): string[] {
     .map((pattern) => pattern.trim().toLowerCase())
     .filter((pattern) => pattern.length > 0)
 }
+
+// Unlike getPrivateSourcePackagePatterns() (where an empty pattern list means "no
+// restriction, matches everything" for routing purposes), here an empty pattern list
+// means "nothing explicitly matches" — this is used to opt specific packages into
+// extra behavior (e.g. showing more versions on hover), not to gate routing.
+export function matchesPrivateSourcePattern(name: string): boolean {
+  const patterns = getPrivateSourcePackagePatterns()
+  if (patterns.length === 0) {
+    return false
+  }
+
+  const lowerName = name.toLowerCase()
+  return patterns.some((pattern) => lowerName.includes(pattern))
+}

@@ -28,6 +28,7 @@ export const PackageSchema = z.object({
   summary: z.string().nullish(),
   url: z.string().optional(),
   format: ProjectFormatSchema.optional(),
+  source: z.string().optional().describe('The resolved package source URL used to fetch this'),
 })
 
 export type PackageType = z.infer<typeof PackageSchema>

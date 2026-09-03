@@ -6,6 +6,8 @@ import { ProjectParser } from '@/project'
 import { ProjectFormatType } from '@/schemas'
 import { Selector } from '@/selector'
 
+import { buildVersionsSection } from './utils'
+
 export class HoverProvider implements vscode.HoverProvider, ExtensionComponent {
   private _onDidChangeConfiguration: vscode.EventEmitter<void> = new vscode.EventEmitter<void>()
 
@@ -52,7 +54,8 @@ export class HoverProvider implements vscode.HoverProvider, ExtensionComponent {
 
     try {
       const pkg = await service.getPackage(dependency.name, dependency)
-      const sections = [pkg.summary, `Latest version: ${pkg.version}`, pkg.url].filter(
+      const versionsSection = await buildVersionsSection(dependency.name, pkg)
+      const sections = [pkg.summary, versionsSection, pkg.url].filter(
         (i): i is Exclude<typeof i, undefined> => i !== undefined,
       )
       const message = sections.join('\n\n')

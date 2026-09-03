@@ -3,6 +3,7 @@ import {
   clearCodeArtifactTokenCache,
   getCodeArtifactAuthHeader,
   getCodeArtifactPackageSummary,
+  getCodeArtifactPackageVersionDate,
 } from './codeArtifactAuth'
 
 const execFileMock = vi.fn<(...args: unknown[]) => void>()
@@ -139,11 +140,14 @@ describe('getCodeArtifactAuthHeader', () => {
   })
 })
 
-function mockDescribeResponse(summary: string | null) {
+function mockDescribeResponse(
+  summary: string | null,
+  publishedTime: string | number | null = null,
+) {
   execFileMock.mockImplementation((...args: unknown[]) => {
     const callback = args[args.length - 1] as ExecFileCallback
     callback(null, {
-      stdout: JSON.stringify({ packageVersion: { summary } }),
+      stdout: JSON.stringify({ packageVersion: { summary, publishedTime } }),
       stderr: '',
     })
   })
@@ -266,5 +270,77 @@ describe('getCodeArtifactPackageSummary', () => {
     })
 
     expect(summary).toBeUndefined()
+  })
+})
+
+describe('getCodeArtifactPackageVersionDate', () => {
+  beforeEach(() => {
+    clearCodeArtifactSummaryCache()
+    execFileMock.mockReset()
+  })
+
+  it('returns undefined when the endpoint is not a recognized CodeArtifact repository URL', async () => {
+    const date = await getCodeArtifactPackageVersionDate({
+      repositoryEndpoint: 'https://pypi.org/simple/',
+      packageName: 'requests',
+      packageVersion: '2.32.0',
+    })
+    expect(date).toBeUndefined()
+    expect(execFileMock).not.toHaveBeenCalled()
+  })
+
+  it('fetches and formats the publish date as YYYY-MM-DD', async () => {
+    mockDescribeResponse('HTTP for Humans.', '2024-01-15T10:30:00Z')
+
+    const date = await getCodeArtifactPackageVersionDate({
+      repositoryEndpoint: REPOSITORY_ENDPOINT,
+      packageName: 'requests',
+      packageVersion: '2.32.0',
+    })
+
+    expect(date).toBe('2024-01-15')
+  })
+
+  it('returns undefined when there is no publish date in the response', async () => {
+    mockDescribeResponse('HTTP for Humans.', null)
+
+    const date = await getCodeArtifactPackageVersionDate({
+      repositoryEndpoint: REPOSITORY_ENDPOINT,
+      packageName: 'requests',
+      packageVersion: '2.32.0',
+    })
+
+    expect(date).toBeUndefined()
+  })
+
+  it('returns undefined (not a throw) when the AWS CLI fails', async () => {
+    mockCliFailure('access denied')
+
+    const date = await getCodeArtifactPackageVersionDate({
+      repositoryEndpoint: REPOSITORY_ENDPOINT,
+      packageName: 'requests',
+      packageVersion: '2.32.0',
+    })
+
+    expect(date).toBeUndefined()
+  })
+
+  it('shares one cached CLI call with getCodeArtifactPackageSummary for the same package/version', async () => {
+    mockDescribeResponse('HTTP for Humans.', '2024-01-15T10:30:00Z')
+
+    const summary = await getCodeArtifactPackageSummary({
+      repositoryEndpoint: REPOSITORY_ENDPOINT,
+      packageName: 'requests',
+      packageVersion: '2.32.0',
+    })
+    const date = await getCodeArtifactPackageVersionDate({
+      repositoryEndpoint: REPOSITORY_ENDPOINT,
+      packageName: 'requests',
+      packageVersion: '2.32.0',
+    })
+
+    expect(summary).toBe('HTTP for Humans.')
+    expect(date).toBe('2024-01-15')
+    expect(execFileMock).toHaveBeenCalledTimes(1)
   })
 })
