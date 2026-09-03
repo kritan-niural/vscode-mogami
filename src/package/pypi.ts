@@ -3,11 +3,13 @@ import semver from 'semver'
 import { ZodError } from 'zod'
 import { z } from 'zod'
 
+import { getCodeArtifactConfig, getPrivateSourcePackagePatterns } from '@/configuration'
 import { PackageType } from '@/schemas'
 import { uniqWith, urlJoin } from '@/utils'
 import { compare } from '@/versioning/utils'
 
 import { AbstractPackageClient } from './abstractClient'
+import { getCodeArtifactAuthHeader, getCodeArtifactPackageSummary } from './codeArtifactAuth'
 
 export const PypiInfoSchema = z.object({
   name: z.string(),
@@ -45,6 +47,9 @@ export function parse(data: unknown): PackageType {
       return version
     })
     .filter((i): i is Exclude<typeof i, undefined> => i !== undefined)
+    // Some packages publish releases with version strings the PEP 440 comparator
+    // can't parse (e.g. legacy/local versions); drop them, same as parseSimple below.
+    .filter((version) => semver.valid(semver.coerce(version)) !== null)
 
   return {
     name: parsed.info.name,
@@ -100,13 +105,39 @@ export class PyPIClient extends AbstractPackageClient {
     super('https://pypi.org/pypi/', privateSource)
   }
 
-  async get(name: string): Promise<PackageType> {
-    const isSimple = this.source.pathname.includes('/simple')
-    const url = isSimple
-      ? urlJoin(this.source.toString(), name, '/')
-      : urlJoin(this.source.toString(), name, 'json')
+  // Route only packages matching vscode-mogami.privateSourcePackagePattern to the
+  // private/CodeArtifact source (e.g. internal packages); everything else still
+  // resolves against the public PyPI index, regardless of the configured source.
+  private sourceFor(name: string): URL {
+    const patterns = getPrivateSourcePackagePatterns()
+    if (patterns.length === 0) {
+      return this.source
+    }
 
-    const text = await this.fetchText(url)
+    const lowerName = name.toLowerCase()
+    return patterns.some((pattern) => lowerName.includes(pattern)) ? this.source : this.publicSource
+  }
+
+  private async getAuthHeader(source: URL): Promise<Record<string, string> | undefined> {
+    if (source === this.publicSource) {
+      return undefined
+    }
+
+    return getCodeArtifactAuthHeader({
+      repositoryEndpoint: source.toString(),
+      profile: getCodeArtifactConfig()?.profile,
+    })
+  }
+
+  async get(name: string): Promise<PackageType> {
+    const source = this.sourceFor(name)
+    const isSimple = source.pathname.includes('/simple')
+    const url = isSimple
+      ? urlJoin(source.toString(), name, '/')
+      : urlJoin(source.toString(), name, 'json')
+
+    const headers = await this.getAuthHeader(source)
+    const text = await this.fetchText(url, { headers })
 
     try {
       const result = parse(JSON.parse(text))
@@ -117,11 +148,26 @@ export class PyPIClient extends AbstractPackageClient {
       }
     }
 
+    let result: PackageType
     try {
-      const result = parseSimple(text, name)
-      return this.normalizePackage(result)
+      result = parseSimple(text, name)
     } catch {
       throw new Error('Failed to parse PyPI API response')
     }
+
+    const normalized = this.normalizePackage(result)
+
+    // The simple index has no description; best-effort enrich it from CodeArtifact's
+    // own API when the resolved source is a CodeArtifact endpoint (no-op otherwise).
+    if (source !== this.publicSource) {
+      normalized.summary = await getCodeArtifactPackageSummary({
+        repositoryEndpoint: source.toString(),
+        profile: getCodeArtifactConfig()?.profile,
+        packageName: name,
+        packageVersion: normalized.version,
+      })
+    }
+
+    return normalized
   }
 }

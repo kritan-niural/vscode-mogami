@@ -2,11 +2,14 @@ import * as vscode from 'vscode'
 import { z } from 'zod'
 
 import {
+  CodeArtifactProfileKey,
+  CodeArtifactRepositoryEndpointKey,
   ConcurrencyKey,
   DisableCodeLensKey,
   DisableHoverKey,
   EnableCodeLensKey,
   ExtID,
+  PrivateSourcePackagePatternKey,
   showPrerelease,
   usePrivateSourceKey,
 } from '@/constants'
@@ -42,4 +45,35 @@ export function getDisabledHoverFormats(): ProjectFormatType[] {
 
 export function getDisabledCodeLensFormats(): ProjectFormatType[] {
   return getDisabledFormats(DisableCodeLensKey)
+}
+
+export interface CodeArtifactConfigType {
+  repositoryEndpoint: string
+  profile?: string
+}
+
+export function getCodeArtifactConfig(): CodeArtifactConfigType | undefined {
+  const config = vscode.workspace.getConfiguration(ExtID)
+  const repositoryEndpoint = config.get<string | null>(CodeArtifactRepositoryEndpointKey, null)
+  if (!repositoryEndpoint) {
+    return undefined
+  }
+
+  const profile = config.get<string | null>(CodeArtifactProfileKey, null)
+  return { repositoryEndpoint, profile: profile ?? undefined }
+}
+
+// Empty array means "no restriction" (private source applies to every package name).
+export function getPrivateSourcePackagePatterns(): string[] {
+  const raw = vscode.workspace
+    .getConfiguration(ExtID)
+    .get<string | null>(PrivateSourcePackagePatternKey, null)
+  if (!raw) {
+    return []
+  }
+
+  return raw
+    .split(',')
+    .map((pattern) => pattern.trim().toLowerCase())
+    .filter((pattern) => pattern.length > 0)
 }

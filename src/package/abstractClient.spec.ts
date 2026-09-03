@@ -22,8 +22,8 @@ class TestClient extends AbstractPackageClient {
     return this.fetchJson(url, options)
   }
 
-  fetchTextPublic(url: string) {
-    return this.fetchText(url)
+  fetchTextPublic(url: string, options?: { headers?: Record<string, string> }) {
+    return this.fetchText(url, options)
   }
 }
 
@@ -85,6 +85,15 @@ describe('AbstractPackageClient', () => {
       await expect(client.fetchTextPublic('https://example.com/page')).rejects.toBeInstanceOf(
         HttpError,
       )
+    })
+
+    it('passes custom headers', async () => {
+      mockFetch('<html>hello</html>')
+      await client.fetchTextPublic('https://example.com/page', {
+        headers: { Authorization: 'Basic token' },
+      })
+      const [, init] = vi.mocked(fetch).mock.calls[0]
+      expect((init!.headers as Headers).get('authorization')).toBe('Basic token')
     })
   })
 })

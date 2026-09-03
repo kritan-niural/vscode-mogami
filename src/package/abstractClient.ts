@@ -32,6 +32,10 @@ export abstract class AbstractPackageClient implements PackageClientType {
     return this.primarySource
   }
 
+  protected get publicSource(): URL {
+    return this.primarySource
+  }
+
   protected async fetchJson(
     url: string,
     options: { headers?: Record<string, string> } = {},
@@ -43,8 +47,12 @@ export abstract class AbstractPackageClient implements PackageClientType {
     })
   }
 
-  protected async fetchText(url: string): Promise<string> {
+  protected async fetchText(
+    url: string,
+    options: { headers?: Record<string, string> } = {},
+  ): Promise<string> {
     return cachedFetch(url, {
+      headers: options.headers,
       responseType: 'text',
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
     }) as Promise<string>

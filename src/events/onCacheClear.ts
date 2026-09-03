@@ -4,6 +4,10 @@ import { CodeLensProvider } from '@/codeLens/codeLensProvider'
 import { OnClearCacheCommand } from '@/constants'
 import { HoverProvider } from '@/hover/hoverProvider'
 import { clearCache } from '@/package/cache'
+import {
+  clearCodeArtifactSummaryCache,
+  clearCodeArtifactTokenCache,
+} from '@/package/codeArtifactAuth'
 
 export class OnClearCache {
   disposable: vscode.Disposable
@@ -20,6 +24,8 @@ export class OnClearCache {
 
   execute(): void {
     clearCache()
+    clearCodeArtifactTokenCache()
+    clearCodeArtifactSummaryCache()
 
     this.codeLensProviders.forEach((provider) => {
       if (provider.isActive()) {

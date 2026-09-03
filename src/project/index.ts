@@ -3,6 +3,7 @@ import { ResultAsync } from 'neverthrow'
 import pmap from 'p-map'
 import vscode from 'vscode'
 
+import { getCodeArtifactConfig } from '@/configuration'
 import { Logger } from '@/logger'
 import { AnacondaClient } from '@/package/anaconda'
 import { DockerClient } from '@/package/docker'
@@ -97,7 +98,8 @@ async function createClient(
     project.format === 'pip-requirements' ||
     project.format === 'pep723'
   ) {
-    return new PyPIClient(project.source)
+    const source = project.source ?? getCodeArtifactConfig()?.repositoryEndpoint
+    return new PyPIClient(source)
   }
 
   const gitHubPersonalAccessToken = await getGitHubPersonalAccessToken(context)

@@ -205,6 +205,14 @@
           "default": true,
           "description": "Whether to use a private package source (repository) if it's set or not."
         },
+        "vscode-mogami.privateSourcePackagePattern": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "default": null,
+          "description": "Restrict the private/CodeArtifact Python package source to package names containing this substring (comma-separated for multiple, e.g. \"niural-core,acme-internal\"). Packages that don't match are resolved against the public PyPI index instead. Leave unset to use the private source for every package (default behavior)."
+        },
         "vscode-mogami.showPrerelease": {
           "type": "boolean",
           "default": false,
@@ -217,6 +225,22 @@
           ],
           "default": null,
           "description": "GitHub PAT for interacting with GitHub REST API."
+        },
+        "vscode-mogami.codeArtifact.repositoryEndpoint": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "default": null,
+          "description": "AWS CodeArtifact PyPI repository endpoint (e.g. https://my-domain-123456789012.d.codeartifact.us-east-1.amazonaws.com/pypi/my-repo/simple/), obtainable via `aws codeartifact get-repository-endpoint --domain <domain> --repository <repository> --format pypi`. Used as the package source for Python projects (pyproject.toml/uv/poetry, requirements.txt, PEP 723) that don't declare their own source. Requests are authenticated with a short-lived token minted via the AWS CLI (`aws codeartifact get-authorization-token`), auto-refreshed as needed; requires the AWS CLI to be installed and already authenticated locally."
+        },
+        "vscode-mogami.codeArtifact.profile": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "default": null,
+          "description": "AWS CLI named profile to use (passed as `--profile`) when minting an AWS CodeArtifact authorization token. Leave unset to use the default AWS credential resolution."
         }
       }
     }

@@ -3,9 +3,24 @@ import { ZodError } from 'zod'
 import { clearCache } from './cache'
 import { parse, parseSimple, PyPIClient } from './pypi'
 
+const getUsePrivateSourceMock = vi.fn<() => boolean>(() => false)
+const getPrivateSourcePackagePatternsMock = vi.fn<() => string[]>(() => [])
+
 vi.mock('@/configuration', () => ({
   getShowPrerelease: () => false,
-  getUsePrivateSource: () => false,
+  getUsePrivateSource: () => getUsePrivateSourceMock(),
+  getCodeArtifactConfig: () => undefined,
+  getPrivateSourcePackagePatterns: () => getPrivateSourcePackagePatternsMock(),
+}))
+
+const getCodeArtifactAuthHeaderMock =
+  vi.fn<(...args: unknown[]) => Promise<Record<string, string> | undefined>>()
+const getCodeArtifactPackageSummaryMock =
+  vi.fn<(...args: unknown[]) => Promise<string | undefined>>()
+
+vi.mock('./codeArtifactAuth', () => ({
+  getCodeArtifactAuthHeader: (...args: unknown[]) => getCodeArtifactAuthHeaderMock(...args),
+  getCodeArtifactPackageSummary: (...args: unknown[]) => getCodeArtifactPackageSummaryMock(...args),
 }))
 
 function mockFetchText(text: string, status = 200) {
@@ -63,6 +78,20 @@ describe('parse', () => {
   it('throws on malformed input', () => {
     expect(() => parse({ info: {} })).toThrow(ZodError)
   })
+
+  it('drops release versions that are not semver-coercible', () => {
+    const result = parse({
+      ...jsonPayload,
+      releases: {
+        ...jsonPayload.releases,
+        // some packages publish non-numeric release "versions" (rare, but pypi.org's
+        // JSON API doesn't validate them); these crash the PEP 440 comparator downstream
+        // if left in, since they're passed through as-is when semver can't coerce them
+        unknown: [{ yanked: false }],
+      },
+    })
+    expect(result.versions).toEqual(['2.31.0', '2.32.0'])
+  })
 })
 
 describe('parseSimple', () => {
@@ -104,6 +133,10 @@ describe('PyPIClient', () => {
   beforeEach(() => {
     clearCache()
     vi.unstubAllGlobals()
+    getUsePrivateSourceMock.mockReturnValue(false)
+    getPrivateSourcePackagePatternsMock.mockReturnValue([])
+    getCodeArtifactAuthHeaderMock.mockReset().mockResolvedValue(undefined)
+    getCodeArtifactPackageSummaryMock.mockReset().mockResolvedValue(undefined)
   })
 
   it('parses a JSON API response', async () => {
@@ -136,5 +169,124 @@ describe('PyPIClient', () => {
     mockFetchText('not html or json')
     const client = new PyPIClient()
     await expect(client.get('requests')).rejects.toThrow(/Failed to parse PyPI API response/)
+  })
+
+  it('attaches the auth header when using a private source', async () => {
+    getUsePrivateSourceMock.mockReturnValue(true)
+    getCodeArtifactAuthHeaderMock.mockResolvedValue({ authorization: 'Basic secret' })
+    const fetchMock = mockFetchText(JSON.stringify(jsonPayload))
+    const client = new PyPIClient('https://private.example.com/pypi/')
+
+    await client.get('requests')
+
+    expect(getCodeArtifactAuthHeaderMock).toHaveBeenCalledOnce()
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init!.headers as Headers).get('authorization')).toBe('Basic secret')
+  })
+
+  it('does not attach the auth header when not using a private source', async () => {
+    getCodeArtifactAuthHeaderMock.mockResolvedValue({ authorization: 'Basic secret' })
+    const fetchMock = mockFetchText(JSON.stringify(jsonPayload))
+    const client = new PyPIClient(undefined)
+
+    await client.get('requests')
+
+    expect(getCodeArtifactAuthHeaderMock).not.toHaveBeenCalled()
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init!.headers as Headers).get('authorization')).toBeNull()
+  })
+
+  describe('CodeArtifact description enrichment', () => {
+    const simpleHtml = `
+      <html><body>
+        <a href="#">requests-2.31.0.tar.gz</a>
+        <a href="#">requests-2.32.0.tar.gz</a>
+      </body></html>
+    `
+
+    beforeEach(() => {
+      getUsePrivateSourceMock.mockReturnValue(true)
+    })
+
+    it('enriches the summary from CodeArtifact when using a private source via the simple index', async () => {
+      getCodeArtifactPackageSummaryMock.mockResolvedValue('HTTP for Humans.')
+      mockFetchText(simpleHtml)
+      const client = new PyPIClient('https://private.example.com/pypi/simple/')
+
+      const pkg = await client.get('requests')
+
+      expect(pkg.summary).toBe('HTTP for Humans.')
+      expect(getCodeArtifactPackageSummaryMock).toHaveBeenCalledWith({
+        repositoryEndpoint: 'https://private.example.com/pypi/simple/',
+        profile: undefined,
+        packageName: 'requests',
+        packageVersion: '2.32.0',
+      })
+    })
+
+    it('does not enrich when not using a private source', async () => {
+      getUsePrivateSourceMock.mockReturnValue(false)
+      mockFetchText(simpleHtml)
+      const client = new PyPIClient('https://private.example.com/pypi/simple/')
+
+      await client.get('requests')
+
+      expect(getCodeArtifactPackageSummaryMock).not.toHaveBeenCalled()
+    })
+
+    it('does not enrich a successful JSON API response even on a private source', async () => {
+      mockFetchText(JSON.stringify(jsonPayload))
+      const client = new PyPIClient('https://private.example.com/pypi/')
+
+      const pkg = await client.get('requests')
+
+      expect(pkg.summary).toBe('HTTP for Humans')
+      expect(getCodeArtifactPackageSummaryMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('with a privateSourcePackagePattern configured', () => {
+    beforeEach(() => {
+      getUsePrivateSourceMock.mockReturnValue(true)
+      getPrivateSourcePackagePatternsMock.mockReturnValue(['niural-core'])
+    })
+
+    it('routes a matching package name to the private source', async () => {
+      getCodeArtifactAuthHeaderMock.mockResolvedValue({ authorization: 'Basic secret' })
+      const fetchMock = mockFetchText(JSON.stringify(jsonPayload))
+      const client = new PyPIClient('https://private.example.com/pypi/')
+
+      await client.get('niural-core-utils')
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        'https://private.example.com/pypi/niural-core-utils/json',
+      )
+      expect(getCodeArtifactAuthHeaderMock).toHaveBeenCalledOnce()
+      const [, init] = fetchMock.mock.calls[0]
+      expect((init!.headers as Headers).get('authorization')).toBe('Basic secret')
+    })
+
+    it('routes a non-matching package name to the public PyPI index instead', async () => {
+      const fetchMock = mockFetchText(JSON.stringify(jsonPayload))
+      const client = new PyPIClient('https://private.example.com/pypi/')
+
+      await client.get('requests')
+
+      expect(fetchMock.mock.calls[0][0]).toBe('https://pypi.org/pypi/requests/json')
+      expect(getCodeArtifactAuthHeaderMock).not.toHaveBeenCalled()
+      const [, init] = fetchMock.mock.calls[0]
+      expect((init!.headers as Headers).get('authorization')).toBeNull()
+    })
+
+    it('matches case-insensitively', async () => {
+      const fetchMock = mockFetchText(JSON.stringify(jsonPayload))
+      const client = new PyPIClient('https://private.example.com/pypi/')
+
+      await client.get('Niural-Core-Utils')
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        'https://private.example.com/pypi/Niural-Core-Utils/json',
+      )
+    })
   })
 })

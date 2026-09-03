@@ -57,6 +57,11 @@ export const DisableCodeLensKey = 'disableCodeLens'
 
 export const GitHubPersonalAccessTokenKey = 'gitHubPersonalAccessToken'
 
+export const CodeArtifactRepositoryEndpointKey = 'codeArtifact.repositoryEndpoint'
+export const CodeArtifactProfileKey = 'codeArtifact.profile'
+
+export const PrivateSourcePackagePatternKey = 'privateSourcePackagePattern'
+
 export const OnClearCacheKey = 'clearCache'
 export const OnClearCacheCommand = `${ExtID}.${OnClearCacheKey}`
 

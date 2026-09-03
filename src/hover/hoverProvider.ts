@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 
 import { ExtensionComponent } from '@/extensionComponent'
+import { Logger } from '@/logger'
 import { ProjectParser } from '@/project'
 import { ProjectFormatType } from '@/schemas'
 import { Selector } from '@/selector'
@@ -56,7 +57,10 @@ export class HoverProvider implements vscode.HoverProvider, ExtensionComponent {
       )
       const message = sections.join('\n\n')
       return new vscode.Hover(message, range)
-    } catch {
+    } catch (err) {
+      Logger.error(
+        `Failed to provide a hover for ${dependency.name} in ${document.uri.toString(true)}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+      )
       return
     }
   }
